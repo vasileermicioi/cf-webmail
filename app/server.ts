@@ -5,7 +5,7 @@ import { createAuth } from './lib/auth'
 const app = createApp({
   init(hono) {
     hono.on(['GET', 'POST'], '/api/auth/*', (c) => {
-      return createAuth(c.env).handler(c.req.raw)
+      return createAuth(c.env, undefined, c.req.raw).handler(c.req.raw)
     })
   },
 })

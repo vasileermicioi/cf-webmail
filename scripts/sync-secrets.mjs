@@ -51,16 +51,8 @@ for (const key of ['DATABASE_URL', 'BETTER_AUTH_SECRET']) {
 }
 
 const authUrl = productionEnv.BETTER_AUTH_URL || env.BETTER_AUTH_URL
-if (!authUrl || isLocalUrl(authUrl)) {
-  throw new Error(
-    'Set BETTER_AUTH_URL to your public origin in .env.production (local .dev.vars can stay on localhost).',
-  )
-}
-secrets.BETTER_AUTH_URL = authUrl
-
-if (productionEnv.BETTER_AUTH_ALLOWED_HOSTS || env.BETTER_AUTH_ALLOWED_HOSTS) {
-  secrets.BETTER_AUTH_ALLOWED_HOSTS =
-    productionEnv.BETTER_AUTH_ALLOWED_HOSTS || env.BETTER_AUTH_ALLOWED_HOSTS
+if (authUrl && !isLocalUrl(authUrl)) {
+  secrets.BETTER_AUTH_URL = authUrl
 }
 
 const file = join(tmpdir(), `cf-webmail-secrets-${process.pid}.env`)

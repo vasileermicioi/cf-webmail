@@ -25,7 +25,7 @@ export const POST = createRoute(async (c) => {
     return c.json({ error: 'Name, email, and an 8+ character password are required' }, 400)
   }
 
-  const auth = createAuth(c.env, db)
+  const auth = createAuth(c.env, db, c.req.raw)
   const ctx = await auth.$context
   const created = await ctx.internalAdapter.createUser({
     name,

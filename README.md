@@ -38,7 +38,7 @@ Pending SQL in `drizzle/` is applied automatically at the start of `npm run buil
 3. Add a catch-all or address rule that sends mail to this worker.
 4. Create a user whose email matches the destination address. Mail for unknown addresses is dropped and not stored.
 
-Auth allowed hosts come from `BETTER_AUTH_URL`. Keep localhost in `.env` / `.dev.vars` for development, and set the public origin in `.env.production` (see `.env.production.example`). `npm run deploy` uploads `DATABASE_URL`, `BETTER_AUTH_SECRET`, and that public `BETTER_AUTH_URL`. Extra hosts can go in `BETTER_AUTH_ALLOWED_HOSTS`.
+`npm run deploy` uploads `DATABASE_URL` and `BETTER_AUTH_SECRET` from `.dev.vars`. Auth uses the request origin, so a public `BETTER_AUTH_URL` is optional.
 
 ## Local email test
 

@@ -6,105 +6,47 @@ import { createDb } from './db'
 import * as schema from './db/schema'
 
 function isLocalHost(host: string) {
-  return (
-    host === 'localhost' ||
-    host.startsWith('localhost:') ||
-    host === '127.0.0.1' ||
-    host.startsWith('127.0.0.1:') ||
-    host === '::1'
-  )
+  const hostname = host.replace(/:\d+$/, '')
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
 }
 
-function hostsFromUrl(urlString?: string) {
-  if (!urlString) return []
-  try {
-    const { host, hostname } = new URL(urlString)
-    const hosts = [host, hostname]
-    const parts = hostname.split('.').filter(Boolean)
-    if (parts.length >= 2) {
-      const root = parts.slice(-2).join('.')
-      hosts.push(root, `*.${root}`)
-    }
-    return hosts
-  } catch {
-    return []
+export function originFromRequest(request?: Request, fallback?: string) {
+  if (request) {
+    const url = new URL(request.url)
+    const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? url.host
+    const proto =
+      request.headers.get('x-forwarded-proto') ??
+      (isLocalHost(host) ? 'http' : url.protocol.replace(':', '') || 'https')
+    return `${proto}://${host}`
   }
+  return fallback
 }
 
-function extraAllowedHosts(env: CloudflareBindings) {
-  return (env.BETTER_AUTH_ALLOWED_HOSTS ?? '')
-    .split(',')
-    .map((host) => host.trim())
-    .filter(Boolean)
-}
-
-function allowedHosts(env: CloudflareBindings) {
-  return [
-    'localhost',
-    'localhost:*',
-    '127.0.0.1',
-    '127.0.0.1:*',
-    ...hostsFromUrl(env.BETTER_AUTH_URL),
-    ...extraAllowedHosts(env),
-  ]
-}
-
-function authBaseURL(env: CloudflareBindings) {
-  return {
-    allowedHosts: allowedHosts(env),
-    fallback: env.BETTER_AUTH_URL,
-    protocol: 'auto' as const,
-  }
-}
-
-function requestOrigins(env: CloudflareBindings, request?: Request) {
+function requestOrigins(env: CloudflareBindings, request?: Request, baseURL?: string) {
   const origins = new Set<string>()
+  if (baseURL) origins.add(baseURL)
   if (env.BETTER_AUTH_URL) origins.add(env.BETTER_AUTH_URL)
+
   if (!request) return [...origins]
 
-  try {
-    origins.add(new URL(request.url).origin)
-  } catch {
-    // ignore invalid request URLs
-  }
-
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
-  if (host) {
-    const proto =
-      request.headers.get('x-forwarded-proto') ?? (isLocalHost(host) ? 'http' : 'https')
-    origins.add(`${proto}://${host}`)
-  }
+  const requestOrigin = originFromRequest(request)
+  if (requestOrigin) origins.add(requestOrigin)
 
   const originHeader = request.headers.get('origin')
-  if (originHeader) {
-    try {
-      const originUrl = new URL(originHeader)
-      const allowed = new Set(allowedHosts(env))
-      if (
-        isLocalHost(originUrl.host) ||
-        allowed.has(originUrl.host) ||
-        allowed.has(originUrl.hostname) ||
-        [...allowed].some(
-          (pattern) =>
-            pattern.startsWith('*.') && originUrl.hostname.endsWith(pattern.slice(1)),
-        )
-      ) {
-        origins.add(originUrl.origin)
-      }
-    } catch {
-      // ignore invalid origin headers
-    }
+  if (originHeader && requestOrigin && originHeader === requestOrigin) {
+    origins.add(originHeader)
   }
 
   return [...origins]
 }
 
-export function createAuth(env: CloudflareBindings, db?: Db) {
+export function createAuth(env: CloudflareBindings, db?: Db, request?: Request) {
   const database = db ?? createDb(env)
+  const baseURL = originFromRequest(request, env.BETTER_AUTH_URL)
 
   return betterAuth({
     appName: 'CF Webmail',
-    baseURL: authBaseURL(env),
+    baseURL,
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(database, {
       provider: 'pg',
@@ -126,11 +68,9 @@ export function createAuth(env: CloudflareBindings, db?: Db) {
         adminRoles: ['admin'],
       }),
     ],
-    trustedOrigins: (request) => requestOrigins(env, request),
+    trustedOrigins: (incoming) => requestOrigins(env, incoming ?? request, baseURL),
     advanced: {
-      useSecureCookies: env.BETTER_AUTH_URL
-        ? !isLocalHost(new URL(env.BETTER_AUTH_URL).host)
-        : true,
+      useSecureCookies: Boolean(baseURL?.startsWith('https://')),
       trustedProxyHeaders: true,
     },
   })
