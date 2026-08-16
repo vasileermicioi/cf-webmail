@@ -23,28 +23,44 @@ function parseEnvFile(path) {
   return values
 }
 
+function isLocalUrl(value) {
+  return (
+    value.includes('localhost') ||
+    value.includes('127.0.0.1') ||
+    value.includes('::1')
+  )
+}
+
 const source = existsSync('.dev.vars') ? '.dev.vars' : '.env'
 if (!existsSync(source)) {
   throw new Error('Missing .dev.vars or .env with DATABASE_URL and BETTER_AUTH_SECRET')
 }
 
 const env = parseEnvFile(source)
+const productionEnv = existsSync('.env.production')
+  ? parseEnvFile('.env.production')
+  : {}
 const secrets = {}
 
 for (const key of ['DATABASE_URL', 'BETTER_AUTH_SECRET']) {
-  if (!env[key]) {
+  const value = productionEnv[key] || env[key]
+  if (!value) {
     throw new Error(`Missing ${key} in ${source}`)
   }
-  secrets[key] = env[key]
+  secrets[key] = value
 }
 
-const authUrl = env.BETTER_AUTH_URL
-if (
-  authUrl &&
-  !authUrl.includes('localhost') &&
-  !authUrl.includes('127.0.0.1')
-) {
-  secrets.BETTER_AUTH_URL = authUrl
+const authUrl = productionEnv.BETTER_AUTH_URL || env.BETTER_AUTH_URL
+if (!authUrl || isLocalUrl(authUrl)) {
+  throw new Error(
+    'Set BETTER_AUTH_URL to your public origin in .env.production (local .dev.vars can stay on localhost).',
+  )
+}
+secrets.BETTER_AUTH_URL = authUrl
+
+if (productionEnv.BETTER_AUTH_ALLOWED_HOSTS || env.BETTER_AUTH_ALLOWED_HOSTS) {
+  secrets.BETTER_AUTH_ALLOWED_HOSTS =
+    productionEnv.BETTER_AUTH_ALLOWED_HOSTS || env.BETTER_AUTH_ALLOWED_HOSTS
 }
 
 const file = join(tmpdir(), `cf-webmail-secrets-${process.pid}.env`)

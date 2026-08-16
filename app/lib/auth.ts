@@ -15,26 +15,43 @@ function isLocalHost(host: string) {
   )
 }
 
-function authBaseURL(env: CloudflareBindings) {
-  const allowedHosts = [
+function hostsFromUrl(urlString?: string) {
+  if (!urlString) return []
+  try {
+    const { host, hostname } = new URL(urlString)
+    const hosts = [host, hostname]
+    const parts = hostname.split('.').filter(Boolean)
+    if (parts.length >= 2) {
+      const root = parts.slice(-2).join('.')
+      hosts.push(root, `*.${root}`)
+    }
+    return hosts
+  } catch {
+    return []
+  }
+}
+
+function extraAllowedHosts(env: CloudflareBindings) {
+  return (env.BETTER_AUTH_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean)
+}
+
+function allowedHosts(env: CloudflareBindings) {
+  return [
     'localhost',
     'localhost:*',
     '127.0.0.1',
     '127.0.0.1:*',
-    '*.workers.dev',
+    ...hostsFromUrl(env.BETTER_AUTH_URL),
+    ...extraAllowedHosts(env),
   ]
+}
 
-  if (env.BETTER_AUTH_URL) {
-    try {
-      const url = new URL(env.BETTER_AUTH_URL)
-      allowedHosts.push(url.host, url.hostname)
-    } catch {
-      // ignore invalid BETTER_AUTH_URL
-    }
-  }
-
+function authBaseURL(env: CloudflareBindings) {
   return {
-    allowedHosts,
+    allowedHosts: allowedHosts(env),
     fallback: env.BETTER_AUTH_URL,
     protocol: 'auto' as const,
   }
@@ -62,7 +79,16 @@ function requestOrigins(env: CloudflareBindings, request?: Request) {
   if (originHeader) {
     try {
       const originUrl = new URL(originHeader)
-      if (isLocalHost(originUrl.host) || originUrl.hostname.endsWith('.workers.dev')) {
+      const allowed = new Set(allowedHosts(env))
+      if (
+        isLocalHost(originUrl.host) ||
+        allowed.has(originUrl.host) ||
+        allowed.has(originUrl.hostname) ||
+        [...allowed].some(
+          (pattern) =>
+            pattern.startsWith('*.') && originUrl.hostname.endsWith(pattern.slice(1)),
+        )
+      ) {
         origins.add(originUrl.origin)
       }
     } catch {
