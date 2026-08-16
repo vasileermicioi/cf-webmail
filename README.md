@@ -38,13 +38,7 @@ Pending SQL in `drizzle/` is applied automatically at the start of `npm run buil
 3. Add a catch-all or address rule that sends mail to this worker.
 4. Create a user whose email matches the destination address. Mail for unknown addresses is dropped and not stored.
 
-Set `BETTER_AUTH_URL` to the deployed HTTPS origin before going live, and store `DATABASE_URL` plus `BETTER_AUTH_SECRET` as Worker secrets:
-
-```bash
-npx wrangler secret put DATABASE_URL
-npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put BETTER_AUTH_URL
-```
+Set `BETTER_AUTH_URL` to the deployed HTTPS origin for custom domains. `npm run deploy` uploads `DATABASE_URL` and `BETTER_AUTH_SECRET` from `.dev.vars` as Worker secrets. Localhost `BETTER_AUTH_URL` is not uploaded; the Worker derives the origin from the request (including `*.workers.dev`).
 
 ## Local email test
 

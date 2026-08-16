@@ -5,8 +5,44 @@ import type { Db } from './db'
 import { createDb } from './db'
 import * as schema from './db/schema'
 
+function isLocalHost(host: string) {
+  return (
+    host === 'localhost' ||
+    host.startsWith('localhost:') ||
+    host === '127.0.0.1' ||
+    host.startsWith('127.0.0.1:') ||
+    host === '::1'
+  )
+}
+
+function authBaseURL(env: CloudflareBindings) {
+  const allowedHosts = [
+    'localhost',
+    'localhost:*',
+    '127.0.0.1',
+    '127.0.0.1:*',
+    '*.workers.dev',
+  ]
+
+  if (env.BETTER_AUTH_URL) {
+    try {
+      const url = new URL(env.BETTER_AUTH_URL)
+      allowedHosts.push(url.host, url.hostname)
+    } catch {
+      // ignore invalid BETTER_AUTH_URL
+    }
+  }
+
+  return {
+    allowedHosts,
+    fallback: env.BETTER_AUTH_URL,
+    protocol: 'auto' as const,
+  }
+}
+
 function requestOrigins(env: CloudflareBindings, request?: Request) {
-  const origins = new Set<string>([env.BETTER_AUTH_URL])
+  const origins = new Set<string>()
+  if (env.BETTER_AUTH_URL) origins.add(env.BETTER_AUTH_URL)
   if (!request) return [...origins]
 
   try {
@@ -18,8 +54,7 @@ function requestOrigins(env: CloudflareBindings, request?: Request) {
   const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
   if (host) {
     const proto =
-      request.headers.get('x-forwarded-proto') ??
-      (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https')
+      request.headers.get('x-forwarded-proto') ?? (isLocalHost(host) ? 'http' : 'https')
     origins.add(`${proto}://${host}`)
   }
 
@@ -27,11 +62,7 @@ function requestOrigins(env: CloudflareBindings, request?: Request) {
   if (originHeader) {
     try {
       const originUrl = new URL(originHeader)
-      if (
-        originUrl.hostname === 'localhost' ||
-        originUrl.hostname === '127.0.0.1' ||
-        originUrl.hostname === '::1'
-      ) {
+      if (isLocalHost(originUrl.host) || originUrl.hostname.endsWith('.workers.dev')) {
         origins.add(originUrl.origin)
       }
     } catch {
@@ -47,7 +78,7 @@ export function createAuth(env: CloudflareBindings, db?: Db) {
 
   return betterAuth({
     appName: 'CF Webmail',
-    baseURL: env.BETTER_AUTH_URL,
+    baseURL: authBaseURL(env),
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(database, {
       provider: 'pg',
@@ -71,7 +102,9 @@ export function createAuth(env: CloudflareBindings, db?: Db) {
     ],
     trustedOrigins: (request) => requestOrigins(env, request),
     advanced: {
-      useSecureCookies: env.BETTER_AUTH_URL.startsWith('https://'),
+      useSecureCookies: env.BETTER_AUTH_URL
+        ? !isLocalHost(new URL(env.BETTER_AUTH_URL).host)
+        : true,
       trustedProxyHeaders: true,
     },
   })

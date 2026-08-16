@@ -6,9 +6,9 @@ type AuthSession = Awaited<ReturnType<Auth['api']['getSession']>>
 
 declare global {
   interface CloudflareBindings {
-    DATABASE_URL: string
-    BETTER_AUTH_SECRET: string
-    BETTER_AUTH_URL: string
+    DATABASE_URL?: string
+    BETTER_AUTH_SECRET?: string
+    BETTER_AUTH_URL?: string
   }
 }
 
